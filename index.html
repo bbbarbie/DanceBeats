@@ -1,0 +1,1692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BeatMatch</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+<style>
+/* ============================================================
+   GLOBAL STYLES
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --accent:   #534AB7;
+  --accent-l: #7B72D4;
+  --green:    #22C55E;
+  --amber:    #F59E0B;
+  --red:      #EF4444;
+  --bg:       #0F0F13;
+  --surface:  #1A1A22;
+  --border:   #2E2E3E;
+  --text:     #E8E8F0;
+  --muted:    #8888A0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* TOP BAR */
+#topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px; height: 56px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 100;
+}
+#topbar h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: .02em; }
+#topbar h1 span { color: var(--accent-l); }
+#gear-btn {
+  background: none; border: 1px solid var(--border); color: var(--text);
+  width: 36px; height: 36px; border-radius: 8px; cursor: pointer;
+  font-size: 1.1rem; display: flex; align-items: center; justify-content: center;
+  transition: border-color .2s;
+}
+#gear-btn:hover { border-color: var(--accent-l); }
+
+/* SCREENS */
+.screen { display: none; padding: 32px 24px; max-width: 900px; margin: 0 auto; }
+.screen.active { display: block; }
+
+/* SETTINGS MODAL */
+#settings-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.7); z-index: 200;
+  align-items: center; justify-content: center;
+}
+#settings-overlay.open { display: flex; }
+#settings-modal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 32px; width: 480px; max-width: 95vw;
+}
+#settings-modal h2 { margin-bottom: 16px; }
+
+/* FORMS & INPUTS */
+.field { margin-bottom: 20px; }
+.field label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
+.field input, .field select, .field textarea {
+  width: 100%; padding: 10px 14px; border-radius: 8px;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); font-size: 1rem; outline: none;
+  transition: border-color .2s;
+}
+.field input:focus, .field select:focus { border-color: var(--accent-l); }
+.field .hint { font-size: .78rem; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+
+/* BUTTONS */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 20px; border-radius: 8px; border: none;
+  font-size: .95rem; font-weight: 600; cursor: pointer; transition: opacity .2s;
+}
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--accent-l); }
+.btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover:not(:disabled) { border-color: var(--accent-l); }
+.btn-danger { background: var(--red); color: #fff; }
+.btn-sm { padding: 6px 14px; font-size: .85rem; }
+
+/* TABS */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+.tab-btn {
+  padding: 8px 18px; background: none; border: none; color: var(--muted);
+  font-size: .9rem; cursor: pointer; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; transition: color .2s, border-color .2s;
+}
+.tab-btn.active { color: var(--accent-l); border-bottom-color: var(--accent-l); }
+
+/* PROGRESS BAR */
+.progress-wrap { background: var(--border); border-radius: 99px; height: 8px; overflow: hidden; margin: 12px 0; }
+.progress-bar { height: 100%; background: var(--accent); border-radius: 99px; transition: width .3s; }
+
+/* CARDS */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px;
+}
+.card + .card { margin-top: 16px; }
+
+/* CHOREO LIST */
+#choreo-list { list-style: none; }
+#choreo-list li {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+#choreo-list li .beat-num {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: .85rem; flex-shrink: 0;
+}
+#choreo-list li .beat-num.down { background: var(--accent-l); box-shadow: 0 0 0 2px #fff3; }
+#choreo-list li input {
+  flex: 1; padding: 6px 10px; border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); font-size: .9rem;
+}
+#choreo-list li .time-tag {
+  font-size: .78rem; color: var(--muted); white-space: nowrap;
+}
+
+/* PRACTICE SCREEN */
+#practice-screen { max-width: 100%; padding: 0; }
+#practice-layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  grid-template-rows: auto auto;
+  gap: 0;
+  height: calc(100vh - 56px);
+}
+#cam-wrap {
+  position: relative; background: #000;
+  grid-row: 1 / 3;
+}
+#cam-video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block; }
+#pose-canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none;
+}
+#hud-top {
+  padding: 20px; display: flex; flex-direction: column; gap: 14px;
+  overflow-y: auto; background: var(--surface); border-left: 1px solid var(--border);
+}
+#hud-bottom {
+  padding: 16px 20px; background: var(--surface);
+  border-left: 1px solid var(--border); border-top: 1px solid var(--border);
+}
+
+/* BEAT GRID */
+#beat-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+.beat-dot {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--border); transition: background .1s, transform .1s;
+}
+.beat-dot.active { background: var(--accent); transform: scale(1.2); }
+.beat-dot.down { border: 2px solid var(--accent-l); }
+
+/* MOVE CUE */
+#move-cue {
+  font-size: 1.6rem; font-weight: 800; color: var(--accent-l);
+  text-align: center; min-height: 2.2rem;
+}
+#bpm-display { font-size: 2.4rem; font-weight: 800; text-align: center; }
+#bpm-display span { font-size: .9rem; color: var(--muted); font-weight: 400; }
+
+/* MOTION BAR */
+#motion-bar-wrap { }
+#motion-bar-track { background: var(--border); border-radius: 99px; height: 10px; overflow: hidden; }
+#motion-bar-fill { height: 100%; background: var(--green); border-radius: 99px; transition: width .08s; }
+
+/* SCORE */
+#score-display { font-size: 2rem; font-weight: 800; text-align: center; }
+#score-display span { font-size: .85rem; color: var(--muted); font-weight: 400; }
+
+/* FEEDBACK FEED */
+#feedback-feed { list-style: none; }
+#feedback-feed li {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 0; font-size: .85rem; border-bottom: 1px solid var(--border);
+  opacity: .9;
+}
+.tag-great { color: var(--green); font-weight: 700; }
+.tag-close  { color: var(--amber); font-weight: 700; }
+.tag-miss   { color: var(--red);   font-weight: 700; }
+
+/* "STEP INTO FRAME" OVERLAY */
+#frame-hint {
+  display: none; position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,.75); color: #fff; padding: 8px 20px; border-radius: 99px;
+  font-size: .9rem; pointer-events: none;
+}
+
+/* RESULTS SCREEN */
+#results-chart { width: 100%; height: 160px; margin: 16px 0; }
+#session-history { list-style: none; margin-top: 8px; }
+#session-history li {
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; font-size: .9rem;
+}
+
+/* MISC */
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.badge {
+  display: inline-block; padding: 2px 10px; border-radius: 99px;
+  font-size: .78rem; font-weight: 600;
+}
+.badge-accent { background: var(--accent); color: #fff; }
+.status-msg { color: var(--muted); font-size: .9rem; margin-top: 8px; min-height: 1.2em; }
+#ai-report {
+  white-space: pre-wrap; line-height: 1.7; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px; margin-top: 16px;
+}
+.section-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; }
+.tap-area { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+
+/* MUSIC MODE TOGGLE */
+#music-mode-bar {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 10px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <h1>Beat<span>Match</span></h1>
+  <button id="gear-btn" title="Settings">⚙</button>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div id="settings-overlay">
+  <div id="settings-modal">
+    <h2>Settings</h2>
+    <div class="field">
+      <label>Anthropic API Key</label>
+      <input type="password" id="api-key-input" placeholder="sk-ant-…">
+      <div class="hint">
+        Your key is stored only in this browser and sent directly to Anthropic.<br>
+        Calling the API from the browser exposes the key to anyone using this device — for a public app, route calls through your own backend instead.
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn btn-primary" id="save-key-btn">Save Key</button>
+      <button class="btn btn-secondary" id="close-settings-btn">Close</button>
+      <span id="key-save-status" class="status-msg"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SCREEN 1 — SETUP
+     ══════════════════════════════════════════════ -->
+<div id="setup-screen" class="screen active">
+  <h2 style="margin-bottom:6px">Analyse a Reference Video</h2>
+  <p style="color:var(--muted);margin-bottom:24px">Upload a dance video. BeatMatch will extract the beat, detect poses, and name each move.</p>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="upload">Upload a File</button>
+    <button class="tab-btn" data-tab="link">Paste a Link</button>
+  </div>
+
+  <!-- UPLOAD TAB -->
+  <div id="tab-upload">
+    <div class="field">
+      <label>Dance video (MP4, WebM, MOV)</label>
+      <input type="file" id="video-file-input" accept="video/*">
+    </div>
+  </div>
+
+  <!-- LINK TAB -->
+  <div id="tab-link" style="display:none">
+    <div class="field">
+      <label>Direct video URL (.mp4 / .webm from a CORS-permitting host)</label>
+      <input type="url" id="video-url-input" placeholder="https://example.com/dance.mp4">
+      <div class="hint" id="url-hint"></div>
+    </div>
+    <button class="btn btn-secondary btn-sm" id="load-url-btn">Load URL</button>
+    <!-- Stub: fetchViaBackendProxy(url) — plug in a server-side downloader here for YouTube/TikTok/IG -->
+  </div>
+
+  <!-- VIDEO PREVIEW -->
+  <video id="ref-video" style="display:none;width:100%;max-height:300px;border-radius:10px;margin:16px 0" controls muted></video>
+
+  <!-- MANUAL BPM FALLBACK -->
+  <div id="manual-bpm-wrap" style="display:none" class="card" style="margin-top:16px">
+    <div class="section-title">No beat detected — set BPM manually</div>
+    <div class="tap-area">
+      <button class="btn btn-secondary" id="tap-btn">Tap Tempo</button>
+      <input type="number" id="manual-bpm-input" min="40" max="240" placeholder="BPM" style="width:90px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+      <span id="tap-bpm-display" style="color:var(--accent-l);font-weight:700"></span>
+    </div>
+  </div>
+
+  <div style="margin-top:20px">
+    <button class="btn btn-primary" id="analyse-btn" disabled>Analyse Video</button>
+    <div id="analysis-progress-wrap" style="display:none;margin-top:16px">
+      <div class="status-msg" id="analysis-status">Initialising…</div>
+      <div class="progress-wrap"><div class="progress-bar" id="analysis-progress" style="width:0%"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SCREEN 2 — CHOREO REVIEW
+     ══════════════════════════════════════════════ -->
+<div id="review-screen" class="screen">
+  <div class="row" style="margin-bottom:24px;justify-content:space-between">
+    <div>
+      <h2>Choreography Map</h2>
+      <p style="color:var(--muted);margin-top:4px" id="review-meta"></p>
+    </div>
+    <button class="btn btn-primary" id="go-practice-btn">Start Practice →</button>
+  </div>
+
+  <!-- VOICE SETTINGS -->
+  <div class="card" style="margin-bottom:24px">
+    <div class="section-title">Voice Coaching Track</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
+      <div class="field">
+        <label>Voice</label>
+        <select id="voice-picker"></select>
+      </div>
+      <div class="field">
+        <label>Speed</label>
+        <select id="voice-rate">
+          <option value="0.7">Slow</option>
+          <option value="1" selected>Normal</option>
+          <option value="1.3">Fast</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Cue style</label>
+        <select id="cue-style">
+          <option value="both" selected>Counts + Move names</option>
+          <option value="counts">Counts only</option>
+          <option value="names">Move names only</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn btn-secondary btn-sm" id="preview-voice-btn">▶ Preview coaching track</button>
+    <button class="btn btn-secondary btn-sm" id="stop-voice-btn" style="display:none">■ Stop preview</button>
+  </div>
+
+  <!-- MOVE LIST -->
+  <div class="section-title">Moves (click name to rename)</div>
+  <ul id="choreo-list"></ul>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SCREEN 3 — PRACTICE
+     ══════════════════════════════════════════════ -->
+<div id="practice-screen" class="screen">
+  <div id="music-mode-bar">
+    <strong>Music:</strong>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+      <input type="radio" name="music-mode" value="app" checked> Through the app
+      <span style="color:var(--muted);font-size:.8rem">(accurate sync)</span>
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+      <input type="radio" name="music-mode" value="mic"> Mic listens
+      <span style="color:var(--muted);font-size:.8rem">(less precise — best with clear beat)</span>
+    </label>
+    <button class="btn btn-primary btn-sm" id="start-practice-btn">▶ Start</button>
+    <button class="btn btn-danger btn-sm" id="stop-practice-btn" style="display:none">■ Stop</button>
+  </div>
+
+  <div id="practice-layout">
+    <!-- CAMERA + SKELETON -->
+    <div id="cam-wrap">
+      <video id="cam-video" autoplay playsinline muted></video>
+      <canvas id="pose-canvas"></canvas>
+      <div id="frame-hint">Step into frame</div>
+    </div>
+
+    <!-- HUD TOP -->
+    <div id="hud-top">
+      <div>
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:6px">BEAT</div>
+        <div id="beat-grid"></div>
+      </div>
+
+      <div>
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:4px">NEXT MOVE</div>
+        <div id="move-cue">–</div>
+      </div>
+
+      <div>
+        <div id="bpm-display">– <span>BPM</span></div>
+      </div>
+
+      <div>
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:4px">MOTION</div>
+        <div id="motion-bar-track"><div id="motion-bar-fill" style="width:0%"></div></div>
+      </div>
+
+      <div>
+        <div id="score-display">– <span>on beat</span></div>
+      </div>
+
+      <div>
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:6px">LAST BEATS</div>
+        <ul id="feedback-feed"></ul>
+      </div>
+    </div>
+
+    <!-- HUD BOTTOM (controls) -->
+    <div id="hud-bottom">
+      <div style="font-size:.75rem;color:var(--muted);margin-bottom:6px">CAMERA</div>
+      <select id="camera-picker" style="width:100%;padding:6px;border-radius:6px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:.85rem"></select>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SCREEN 4 — RESULTS
+     ══════════════════════════════════════════════ -->
+<div id="results-screen" class="screen">
+  <div class="row" style="justify-content:space-between;margin-bottom:24px">
+    <h2>Session Report</h2>
+    <div class="row">
+      <button class="btn btn-secondary" id="practice-again-btn">Practice Again</button>
+      <button class="btn btn-secondary" id="back-setup-btn">New Video</button>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px" id="stats-grid">
+    <div class="card" style="text-align:center">
+      <div style="font-size:2.2rem;font-weight:800" id="stat-score">–</div>
+      <div style="color:var(--muted);font-size:.85rem">On-beat %</div>
+    </div>
+    <div class="card" style="text-align:center">
+      <div style="font-size:2.2rem;font-weight:800" id="stat-great">–</div>
+      <div style="color:var(--muted);font-size:.85rem">Great</div>
+    </div>
+    <div class="card" style="text-align:center">
+      <div style="font-size:2.2rem;font-weight:800" id="stat-miss">–</div>
+      <div style="color:var(--muted);font-size:.85rem">Miss</div>
+    </div>
+  </div>
+
+  <canvas id="results-chart"></canvas>
+
+  <div class="section-title">AI Coaching Report</div>
+  <div id="ai-report">Loading…</div>
+
+  <div class="section-title" style="margin-top:32px">Session History</div>
+  <ul id="session-history"></ul>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     JAVASCRIPT
+     ══════════════════════════════════════════════ -->
+<script>
+/* ============================================================
+   CONFIG — all tunables in one place
+   ============================================================ */
+const CONFIG = {
+  beatToleranceMs:      150,
+  minBpm:               60,
+  maxBpm:               180,
+  poseModel:            "MoveNetLightning",
+  motionThresholdHigh:  0.015,
+  motionThresholdLow:   0.004,
+  countLength:          8,
+  ttsCueLeadBeats:      1,
+  claudeModel:          "claude-sonnet-4-6",
+  claudeApiUrl:         "https://api.anthropic.com/v1/messages",
+  analyseFps:           15,
+  maxVideoSecs:         600,
+  spectralFluxMult:     1.5,  // adaptive threshold multiplier
+  spectralRefractoryMs: 250,
+  fftSize:              2048,
+  historyBeats:         20,   // beats to keep for adaptive threshold
+};
+
+/* ============================================================
+   APP STATE
+   ============================================================ */
+const STATE = {
+  beats:      [],
+  poseFrames: [],
+  choreoMap:  [],
+  bpm:        0,
+  sessionData: null,
+  detector:   null,  // MoveNet detector instance
+  audioCtx:   null,
+  refAudioBuf: null,
+  camStream:  null,
+  practiceRaf: null,
+  isAnalysing: false,
+  isPracticing: false,
+  currentBeatIndex: 0,
+  beatResults: [],
+  musicMode:  'app',  // 'app' | 'mic'
+  appSourceNode: null,
+  micStream:  null,
+};
+
+/* ============================================================
+   MODULE 0 — UTILITIES
+   ============================================================ */
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function getApiKey() { return localStorage.getItem('bm_api_key') || ''; }
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function saveSessionHistory(data) {
+  const hist = JSON.parse(localStorage.getItem('bm_history') || '[]');
+  hist.unshift(data);
+  localStorage.setItem('bm_history', JSON.stringify(hist.slice(0, 30)));
+}
+
+function loadSessionHistory() {
+  return JSON.parse(localStorage.getItem('bm_history') || '[]');
+}
+
+async function callClaude(messages, maxTokens = 512) {
+  const key = getApiKey();
+  if (!key) throw new Error('No API key — add it in Settings (⚙)');
+  const res = await fetch(CONFIG.claudeApiUrl, {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: CONFIG.claudeModel,
+      max_tokens: maxTokens,
+      messages,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${res.status}`);
+  }
+  const data = await res.json();
+  return data.content[0].text;
+}
+
+/* ============================================================
+   MODULE 1 — BEAT DETECTOR
+   Input:  AudioBuffer (offline) OR MediaStream (live)
+   Output: Beat[] (offline) or live callback onBeat(Beat)
+   ============================================================ */
+const BeatDetector = (() => {
+  function detectFromBuffer(audioBuffer) {
+    // Offline beat detection via spectral flux on a mono downmix
+    return new Promise(resolve => {
+      const sampleRate = audioBuffer.sampleRate;
+      const data = _getMonoData(audioBuffer);
+      const frameSize = CONFIG.fftSize;
+      const hopSize = Math.floor(sampleRate / CONFIG.analyseFps);
+      const beats = [];
+
+      const prevSpectrum = new Float32Array(frameSize / 2).fill(0);
+      const fluxHistory = [];
+      let lastBeatSample = -99999;
+
+      for (let i = 0; i + frameSize < data.length; i += hopSize) {
+        const frame = data.slice(i, i + frameSize);
+        const spectrum = _computeSpectrum(frame);
+        let flux = 0;
+        for (let k = 0; k < spectrum.length; k++) {
+          const diff = spectrum[k] - prevSpectrum[k];
+          if (diff > 0) flux += diff;
+        }
+        prevSpectrum.set(spectrum);
+        fluxHistory.push(flux);
+        if (fluxHistory.length > CONFIG.historyBeats) fluxHistory.shift();
+
+        const avg = fluxHistory.reduce((a, b) => a + b, 0) / fluxHistory.length;
+        const threshold = avg * CONFIG.spectralFluxMult;
+        const timeSample = i;
+        const refractorySamples = (CONFIG.spectralRefractoryMs / 1000) * sampleRate;
+
+        if (flux > threshold && (timeSample - lastBeatSample) > refractorySamples) {
+          lastBeatSample = timeSample;
+          beats.push({ index: beats.length, timeMs: (timeSample / sampleRate) * 1000, isDownbeat: false });
+        }
+      }
+
+      const bpm = _calcBpm(beats);
+      _markDownbeats(beats);
+      resolve({ beats, bpm });
+    });
+  }
+
+  function _getMonoData(buf) {
+    if (buf.numberOfChannels === 1) return buf.getChannelData(0);
+    const l = buf.getChannelData(0);
+    const r = buf.getChannelData(1);
+    const mono = new Float32Array(l.length);
+    for (let i = 0; i < l.length; i++) mono[i] = (l[i] + r[i]) / 2;
+    return mono;
+  }
+
+  function _computeSpectrum(frame) {
+    // Simple DFT magnitude via power — fast enough for offline
+    const N = frame.length;
+    const half = N / 2;
+    const out = new Float32Array(half);
+    // Use Hann window
+    for (let k = 0; k < half; k++) {
+      let re = 0, im = 0;
+      for (let n = 0; n < N; n++) {
+        const w = 0.5 * (1 - Math.cos((2 * Math.PI * n) / N));
+        const angle = (2 * Math.PI * k * n) / N;
+        re += frame[n] * w * Math.cos(angle);
+        im -= frame[n] * w * Math.sin(angle);
+      }
+      out[k] = Math.sqrt(re * re + im * im) / N;
+    }
+    return out;
+  }
+
+  function _calcBpm(beats) {
+    if (beats.length < 4) return 120;
+    const intervals = [];
+    for (let i = 1; i < beats.length; i++) {
+      intervals.push(beats[i].timeMs - beats[i - 1].timeMs);
+    }
+    intervals.sort((a, b) => a - b);
+    const median = intervals[Math.floor(intervals.length / 2)];
+    const bpm = Math.round(60000 / median);
+    return Math.max(CONFIG.minBpm, Math.min(CONFIG.maxBpm, bpm));
+  }
+
+  function _markDownbeats(beats) {
+    for (let i = 0; i < beats.length; i++) {
+      beats[i].isDownbeat = (i % CONFIG.countLength === 0);
+      beats[i].index = i;
+    }
+  }
+
+  // Live beat detection on MediaStream (mic input)
+  function startLive(audioCtx, sourceNode, onBeat) {
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = CONFIG.fftSize;
+    sourceNode.connect(analyser);
+
+    const bufLen = analyser.frequencyBinCount;
+    const prevBuf = new Float32Array(bufLen).fill(0);
+    const curBuf = new Float32Array(bufLen);
+    const fluxHistory = [];
+    let lastBeatTime = 0;
+    let beatCount = 0;
+
+    function tick() {
+      analyser.getFloatFrequencyData(curBuf);
+      // Convert dB to linear
+      let flux = 0;
+      for (let k = 0; k < bufLen; k++) {
+        const cur = Math.pow(10, curBuf[k] / 20);
+        const prev = Math.pow(10, prevBuf[k] / 20);
+        const diff = cur - prev;
+        if (diff > 0) flux += diff;
+        prevBuf[k] = curBuf[k];
+      }
+
+      fluxHistory.push(flux);
+      if (fluxHistory.length > CONFIG.historyBeats) fluxHistory.shift();
+      const avg = fluxHistory.reduce((a, b) => a + b, 0) / fluxHistory.length;
+      const threshold = avg * CONFIG.spectralFluxMult;
+
+      const now = performance.now();
+      if (flux > threshold && (now - lastBeatTime) > CONFIG.spectralRefractoryMs) {
+        lastBeatTime = now;
+        onBeat({ index: beatCount++, timeMs: now, isDownbeat: (beatCount % CONFIG.countLength === 1) });
+      }
+    }
+
+    const interval = setInterval(tick, 1000 / CONFIG.analyseFps);
+    return { stop: () => { clearInterval(interval); analyser.disconnect(); } };
+  }
+
+  return { detectFromBuffer, startLive, _calcBpm, _markDownbeats };
+})();
+
+/* ============================================================
+   MODULE 2 — VIDEO ANALYSER + POSE EXTRACTOR
+   Input:  <video> element
+   Output: { poseFrames[], beats[], bpm, audioBuffer }
+   ============================================================ */
+const VideoAnalyser = (() => {
+  async function analyse(videoEl, onProgress) {
+    // Decode audio
+    onProgress(0.05, 'Decoding audio…');
+    const audioBuffer = await _decodeAudio(videoEl);
+
+    onProgress(0.15, 'Detecting beats…');
+    const { beats, bpm } = await BeatDetector.detectFromBuffer(audioBuffer);
+
+    // Pose extraction
+    onProgress(0.25, 'Loading pose model…');
+    if (!STATE.detector) {
+      STATE.detector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+      );
+    }
+
+    onProgress(0.35, 'Extracting poses…');
+    const poseFrames = await _extractPoses(videoEl, onProgress);
+
+    return { poseFrames, beats, bpm, audioBuffer };
+  }
+
+  async function _decodeAudio(videoEl) {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    STATE.audioCtx = ctx;
+    // Fetch the video src as ArrayBuffer for audio decoding
+    const resp = await fetch(videoEl.src);
+    const ab = await resp.arrayBuffer();
+    return ctx.decodeAudioData(ab);
+  }
+
+  async function _extractPoses(videoEl, onProgress) {
+    const frames = [];
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const duration = videoEl.duration;
+
+    if (duration > CONFIG.maxVideoSecs) {
+      console.warn(`Video is long (${Math.round(duration)}s), capping at ${CONFIG.maxVideoSecs}s`);
+    }
+    const capDuration = Math.min(duration, CONFIG.maxVideoSecs);
+    const fps = CONFIG.analyseFps;
+    const step = 1 / fps;
+    const totalFrames = Math.floor(capDuration * fps);
+
+    canvas.width = 256; canvas.height = 256;
+
+    for (let fi = 0; fi < totalFrames; fi++) {
+      const t = fi * step;
+      await _seekTo(videoEl, t);
+      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+      const poses = await STATE.detector.estimatePoses(canvas);
+      if (poses.length > 0) {
+        const kps = poses[0].keypoints.map(kp => ({
+          name: kp.name,
+          x: kp.x / canvas.width,
+          y: kp.y / canvas.height,
+          score: kp.score || 0,
+        }));
+        frames.push({ timeMs: t * 1000, keypoints: kps });
+      }
+      if (fi % 10 === 0) onProgress(0.35 + 0.55 * (fi / totalFrames), `Analysing poses… ${Math.round(100 * fi / totalFrames)}%`);
+    }
+    return frames;
+  }
+
+  function _seekTo(video, time) {
+    return new Promise(res => {
+      const onSeeked = () => { video.removeEventListener('seeked', onSeeked); res(); };
+      video.addEventListener('seeked', onSeeked);
+      video.currentTime = time;
+    });
+  }
+
+  return { analyse };
+})();
+
+/* ============================================================
+   MODULE 3 — CHOREO MAPPER
+   Input:  beats[], poseFrames[]
+   Output: choreoMap[] (Move[])
+   ============================================================ */
+const ChoreoMapper = (() => {
+  function build(beats, poseFrames) {
+    const choreoMap = [];
+    for (const beat of beats) {
+      const win = poseFrames.filter(f => Math.abs(f.timeMs - beat.timeMs) <= CONFIG.beatToleranceMs * 3);
+      if (win.length < 2) continue;
+
+      const delta = _motionDelta(win);
+      if (delta < CONFIG.motionThresholdLow * 0.5) continue; // completely still — skip
+
+      const keypointDeltas = _keypointDeltas(win);
+      choreoMap.push({
+        beatIndex: beat.index,
+        timeMs: beat.timeMs,
+        name: `move on beat ${beat.index + 1}`,
+        keypointDeltas,
+        userRenamed: false,
+        motionDelta: delta,
+      });
+    }
+
+    // Keep only local peaks (significant moves)
+    return _keepPeaks(choreoMap);
+  }
+
+  function _motionDelta(frames) {
+    if (frames.length < 2) return 0;
+    let total = 0;
+    const first = frames[0].keypoints;
+    const last = frames[frames.length - 1].keypoints;
+    for (let i = 0; i < Math.min(first.length, last.length); i++) {
+      const dx = last[i].x - first[i].x;
+      const dy = last[i].y - first[i].y;
+      total += Math.sqrt(dx * dx + dy * dy) * (last[i].score || 0);
+    }
+    return total / first.length;
+  }
+
+  function _keypointDeltas(frames) {
+    const first = frames[0].keypoints;
+    const last = frames[frames.length - 1].keypoints;
+    const deltas = {};
+    for (let i = 0; i < Math.min(first.length, last.length); i++) {
+      const dx = last[i].x - first[i].x;
+      const dy = last[i].y - first[i].y;
+      const mag = Math.sqrt(dx * dx + dy * dy);
+      if (mag > 0.01) {
+        deltas[first[i].name] = {
+          dx: Math.round(dx * 100) / 100,
+          dy: Math.round(dy * 100) / 100,
+          magnitude: Math.round(mag * 100) / 100,
+        };
+      }
+    }
+    return deltas;
+  }
+
+  function _keepPeaks(moves) {
+    if (moves.length < 3) return moves;
+    const peaks = [];
+    for (let i = 0; i < moves.length; i++) {
+      const prev = moves[i - 1]?.motionDelta ?? 0;
+      const cur = moves[i].motionDelta;
+      const next = moves[i + 1]?.motionDelta ?? 0;
+      if (cur >= prev && cur >= next) peaks.push(moves[i]);
+    }
+    return peaks.length > 0 ? peaks : moves;
+  }
+
+  return { build };
+})();
+
+/* ============================================================
+   MODULE 4 — AI MOVE NAMER
+   Input:  choreoMap[] (keypointDeltas filled)
+   Output: choreoMap[] with .name populated
+   ============================================================ */
+const AIMoveNamer = (() => {
+  async function nameAll(choreoMap) {
+    if (!getApiKey()) {
+      // Fallback: generic names already set in Module 3
+      return choreoMap;
+    }
+
+    // Batch in groups of 20 to stay within token limits
+    const batchSize = 20;
+    for (let i = 0; i < choreoMap.length; i += batchSize) {
+      const slice = choreoMap.slice(i, i + batchSize);
+      const descriptions = slice.map((m, idx) => {
+        const joints = Object.entries(m.keypointDeltas)
+          .sort((a, b) => b[1].magnitude - a[1].magnitude)
+          .slice(0, 5)
+          .map(([joint, d]) => `${joint}: dx=${d.dx} dy=${d.dy} mag=${d.magnitude}`)
+          .join('; ');
+        return `${idx}: ${joints || 'subtle movement'}`;
+      });
+
+      const prompt = `You are naming dance moves for a choreography app.
+For each numbered move below, respond with ONLY a short 2-4 word plain-English dance move name (no punctuation, no explanations). Return a JSON array of names in the same order.
+
+Moves:
+${descriptions.join('\n')}
+
+Respond with ONLY a JSON array like: ["right arm raise", "step touch left", ...]`;
+
+      try {
+        const raw = await callClaude([{ role: 'user', content: prompt }], 300);
+        const match = raw.match(/\[[\s\S]*\]/);
+        if (match) {
+          const names = JSON.parse(match[0]);
+          names.forEach((name, idx) => {
+            if (!slice[idx].userRenamed) slice[idx].name = name;
+          });
+        }
+      } catch (e) {
+        console.warn('Move naming failed:', e.message);
+      }
+    }
+    return choreoMap;
+  }
+
+  return { nameAll };
+})();
+
+/* ============================================================
+   MODULE 5 — AUDIO TRACK BUILDER (voice coaching)
+   Input:  choreoMap[], bpm, voice settings
+   Output: playCoachingTrack(), stopCoachingTrack()
+   ============================================================ */
+const AudioTrackBuilder = (() => {
+  let timers = [];
+  let _playing = false;
+
+  function playCoachingTrack(startOffsetMs = 0) {
+    if (!('speechSynthesis' in window)) {
+      alert('Web Speech API not supported in this browser. Use Chrome, Edge, or Safari for voice coaching.');
+      return;
+    }
+    stopCoachingTrack();
+    _playing = true;
+
+    const bpm = STATE.bpm;
+    const msPerBeat = 60000 / bpm;
+    const choreoMap = STATE.choreoMap;
+    const rate = parseFloat(document.getElementById('voice-rate').value);
+    const cueStyle = document.getElementById('cue-style').value;
+    const voiceName = document.getElementById('voice-picker').value;
+
+    // Build move lookup
+    const moveByBeat = {};
+    choreoMap.forEach(m => { moveByBeat[m.beatIndex] = m.name; });
+
+    const beats = STATE.beats;
+
+    beats.forEach(beat => {
+      const beatTimeMs = beat.timeMs - (startOffsetMs || 0);
+      if (beatTimeMs < 0) return;
+
+      const countNum = (beat.index % CONFIG.countLength) + 1;
+      const moveName = moveByBeat[beat.index];
+
+      // Lead cue: speak move name 1 beat before it lands
+      const leadBeatTime = beatTimeMs - msPerBeat * CONFIG.ttsCueLeadBeats;
+      if (leadBeatTime > 0 && moveName && cueStyle !== 'counts') {
+        timers.push(setTimeout(() => _speak(moveName, rate, voiceName, beat.isDownbeat ? 0.7 : 1.0), leadBeatTime));
+      }
+
+      if (cueStyle === 'counts' || cueStyle === 'both') {
+        timers.push(setTimeout(() => _speak(String(countNum), rate, voiceName, beat.isDownbeat ? 0.7 : 1.1), beatTimeMs));
+      }
+    });
+  }
+
+  function stopCoachingTrack() {
+    timers.forEach(clearTimeout);
+    timers = [];
+    _playing = false;
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+  }
+
+  function _speak(text, rate, voiceName, pitch = 1.0) {
+    if (!_playing) return;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = rate;
+    utter.pitch = pitch;
+    if (voiceName) {
+      const voices = speechSynthesis.getVoices();
+      const v = voices.find(v => v.name === voiceName);
+      if (v) utter.voice = v;
+    }
+    speechSynthesis.speak(utter);
+  }
+
+  function populateVoicePicker() {
+    const picker = document.getElementById('voice-picker');
+    function fill() {
+      picker.innerHTML = '';
+      speechSynthesis.getVoices().forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.name;
+        opt.textContent = `${v.name} (${v.lang})`;
+        picker.appendChild(opt);
+      });
+    }
+    fill();
+    speechSynthesis.addEventListener('voiceschanged', fill);
+  }
+
+  return { playCoachingTrack, stopCoachingTrack, populateVoicePicker };
+})();
+
+/* ============================================================
+   MODULE 6 — LIVE POSE TRACKER
+   Input:  MediaStream (camera)
+   Output: live motionDelta + keypoints callback
+   ============================================================ */
+const LivePoseTracker = (() => {
+  let _rafId = null;
+  let _lastKeypoints = null;
+
+  async function start(videoEl, canvasEl, onFrame) {
+    if (!STATE.detector) {
+      STATE.detector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+      );
+    }
+
+    const ctx = canvasEl.getContext('2d');
+
+    async function loop() {
+      if (videoEl.readyState < 2) { _rafId = requestAnimationFrame(loop); return; }
+
+      canvasEl.width = videoEl.videoWidth || 640;
+      canvasEl.height = videoEl.videoHeight || 480;
+
+      ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+
+      try {
+        const poses = await STATE.detector.estimatePoses(videoEl);
+        if (poses.length > 0) {
+          const kps = poses[0].keypoints;
+          _drawSkeleton(ctx, kps, canvasEl.width, canvasEl.height);
+
+          const delta = _motionDelta(kps, _lastKeypoints);
+          _lastKeypoints = kps;
+
+          document.getElementById('frame-hint').style.display = 'none';
+          onFrame({ keypoints: kps, motionDelta: delta });
+        } else {
+          document.getElementById('frame-hint').style.display = 'block';
+          onFrame({ keypoints: [], motionDelta: 0 });
+        }
+      } catch (e) {
+        onFrame({ keypoints: [], motionDelta: 0 });
+      }
+
+      _rafId = requestAnimationFrame(loop);
+    }
+    loop();
+  }
+
+  function stop() {
+    if (_rafId) cancelAnimationFrame(_rafId);
+    _rafId = null;
+    _lastKeypoints = null;
+  }
+
+  function _motionDelta(cur, prev) {
+    if (!prev || cur.length === 0) return 0;
+    let sum = 0;
+    for (let i = 0; i < Math.min(cur.length, prev.length); i++) {
+      const dx = cur[i].x - prev[i].x;
+      const dy = cur[i].y - prev[i].y;
+      sum += Math.sqrt(dx * dx + dy * dy) * (cur[i].score || 0);
+    }
+    return sum / cur.length;
+  }
+
+  // Skeleton connections for MoveNet 17 keypoints
+  const CONNECTIONS = [
+    [0,1],[0,2],[1,3],[2,4],        // face
+    [5,6],[5,7],[7,9],[6,8],[8,10], // arms
+    [5,11],[6,12],[11,12],          // torso
+    [11,13],[13,15],[12,14],[14,16] // legs
+  ];
+
+  function _drawSkeleton(ctx, kps, w, h) {
+    // Mirror canvas to match mirrored video
+    ctx.save();
+    ctx.scale(-1, 1);
+    ctx.translate(-w, 0);
+
+    ctx.strokeStyle = '#534AB7';
+    ctx.lineWidth = 2;
+    for (const [a, b] of CONNECTIONS) {
+      if (kps[a]?.score > 0.3 && kps[b]?.score > 0.3) {
+        ctx.beginPath();
+        ctx.moveTo(kps[a].x, kps[a].y);
+        ctx.lineTo(kps[b].x, kps[b].y);
+        ctx.stroke();
+      }
+    }
+    ctx.fillStyle = '#7B72D4';
+    for (const kp of kps) {
+      if (kp.score > 0.3) {
+        ctx.beginPath();
+        ctx.arc(kp.x, kp.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  return { start, stop };
+})();
+
+/* ============================================================
+   MODULE 7 — LIVE HUD + SCORING
+   Input:  beats (live or scheduled), motionDelta, choreoMap[]
+   Output: sessionData when stopped
+   ============================================================ */
+const LiveHUD = (() => {
+  let _beatResults = [];
+  let _motionWindow = [];
+  let _scheduledTimers = [];
+  let _micBeatDetector = null;
+  let _currentBeat = 0;
+  let _appSourceNode = null;
+  let _appStartTime = 0;
+
+  function buildBeatGrid() {
+    const grid = document.getElementById('beat-grid');
+    grid.innerHTML = '';
+    for (let i = 0; i < CONFIG.countLength; i++) {
+      const dot = document.createElement('div');
+      dot.className = 'beat-dot' + (i === 0 ? ' down' : '');
+      dot.id = `beat-dot-${i}`;
+      grid.appendChild(dot);
+    }
+  }
+
+  function updateGrid(beatIndexInCount) {
+    for (let i = 0; i < CONFIG.countLength; i++) {
+      const d = document.getElementById(`beat-dot-${i}`);
+      if (!d) continue;
+      d.classList.toggle('active', i === beatIndexInCount);
+    }
+  }
+
+  function onLiveBeat(beat) {
+    _currentBeat = beat.index;
+    const countPos = beat.index % CONFIG.countLength;
+    updateGrid(countPos);
+    _scoreBeat(beat);
+    _updateMoveCue(beat.index + 1);
+  }
+
+  function _scoreBeat(beat) {
+    const win = _motionWindow.filter(m => Math.abs(m.t - beat.timeMs) <= CONFIG.beatToleranceMs);
+    const motionVal = win.length > 0 ? win.reduce((s, m) => s + m.v, 0) / win.length : 0;
+
+    const expected = STATE.choreoMap.find(m => m.beatIndex === beat.index);
+    let matched = 'miss';
+    if (motionVal >= CONFIG.motionThresholdHigh) matched = 'great';
+    else if (motionVal >= CONFIG.motionThresholdLow) matched = 'close';
+
+    const result = {
+      beatIndex: beat.index,
+      expectedMove: expected?.name || '–',
+      matched,
+      motionValue: motionVal,
+      timeMs: beat.timeMs,
+    };
+    _beatResults.push(result);
+    _updateFeedbackFeed(result);
+    _updateScore();
+  }
+
+  function _updateMoveCue(nextBeatIndex) {
+    const leadIndex = nextBeatIndex + CONFIG.ttsCueLeadBeats;
+    const m = STATE.choreoMap.find(m => m.beatIndex === leadIndex);
+    document.getElementById('move-cue').textContent = m ? m.name : '–';
+  }
+
+  function _updateFeedbackFeed(result) {
+    const ul = document.getElementById('feedback-feed');
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${result.expectedMove}</span><span class="tag-${result.matched}">${result.matched.toUpperCase()}</span>`;
+    ul.prepend(li);
+    while (ul.children.length > 5) ul.removeChild(ul.lastChild);
+  }
+
+  function _updateScore() {
+    if (_beatResults.length === 0) return;
+    const great = _beatResults.filter(r => r.matched === 'great').length;
+    const pct = Math.round((great / _beatResults.length) * 100);
+    document.getElementById('score-display').innerHTML = `${pct}% <span>on beat</span>`;
+  }
+
+  function onMotionFrame({ motionDelta }) {
+    const t = performance.now();
+    _motionWindow.push({ t, v: motionDelta });
+    if (_motionWindow.length > 60) _motionWindow.shift();
+    const pct = Math.min(100, (motionDelta / CONFIG.motionThresholdHigh) * 60);
+    document.getElementById('motion-bar-fill').style.width = pct + '%';
+  }
+
+  function startAppMode() {
+    // Play audio via Web Audio and schedule beats
+    const ctx = STATE.audioCtx || new AudioContext();
+    STATE.audioCtx = ctx;
+    const buf = STATE.refAudioBuf;
+    if (!buf) return;
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    _appSourceNode = src;
+    _appStartTime = ctx.currentTime;
+    src.start();
+
+    // Schedule HUD ticks from known beats
+    STATE.beats.forEach(beat => {
+      const delay = beat.timeMs;
+      const t = _scheduledTimers.length;
+      _scheduledTimers.push(setTimeout(() => {
+        beat.timeMs = performance.now();
+        onLiveBeat(beat);
+      }, delay));
+    });
+    AudioTrackBuilder.playCoachingTrack(0);
+  }
+
+  function startMicMode() {
+    navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      .then(stream => {
+        STATE.micStream = stream;
+        const ctx = STATE.audioCtx || new AudioContext();
+        STATE.audioCtx = ctx;
+        const src = ctx.createMediaStreamSource(stream);
+        _micBeatDetector = BeatDetector.startLive(ctx, src, (beat) => {
+          beat.timeMs = performance.now();
+          onLiveBeat(beat);
+          document.getElementById('bpm-display').innerHTML = `${STATE.bpm || '?'} <span>BPM</span>`;
+        });
+        AudioTrackBuilder.playCoachingTrack(0);
+      })
+      .catch(() => alert('Microphone permission denied.'));
+  }
+
+  function stop() {
+    _scheduledTimers.forEach(clearTimeout);
+    _scheduledTimers = [];
+    if (_appSourceNode) { try { _appSourceNode.stop(); } catch(e){} _appSourceNode = null; }
+    if (_micBeatDetector) { _micBeatDetector.stop(); _micBeatDetector = null; }
+    if (STATE.micStream) { STATE.micStream.getTracks().forEach(t => t.stop()); STATE.micStream = null; }
+    AudioTrackBuilder.stopCoachingTrack();
+    LivePoseTracker.stop();
+
+    const session = {
+      bpm: STATE.bpm,
+      beatResults: [..._beatResults],
+      startedAt: Date.now() - (_beatResults.length > 0 ? (_beatResults[_beatResults.length - 1].timeMs - _beatResults[0].timeMs) : 0),
+      endedAt: Date.now(),
+    };
+    _beatResults = [];
+    _motionWindow = [];
+    return session;
+  }
+
+  return { buildBeatGrid, startAppMode, startMicMode, onMotionFrame, stop };
+})();
+
+/* ============================================================
+   MODULE 8 — AI COACH REPORT
+   Input:  sessionData
+   Output: rendered report on Results screen
+   ============================================================ */
+const AICoachReport = (() => {
+  async function generate(sessionData) {
+    const el = document.getElementById('ai-report');
+
+    const total = sessionData.beatResults.length;
+    if (total === 0) { el.textContent = 'No beats recorded in this session.'; return; }
+
+    const great = sessionData.beatResults.filter(r => r.matched === 'great').length;
+    const close = sessionData.beatResults.filter(r => r.matched === 'close').length;
+    const miss  = sessionData.beatResults.filter(r => r.matched === 'miss').length;
+    const pct = Math.round((great / total) * 100);
+
+    // Per-move breakdown
+    const moveBreakdown = {};
+    sessionData.beatResults.forEach(r => {
+      if (!moveBreakdown[r.expectedMove]) moveBreakdown[r.expectedMove] = { great: 0, close: 0, miss: 0 };
+      moveBreakdown[r.expectedMove][r.matched]++;
+    });
+    const breakdown = Object.entries(moveBreakdown)
+      .map(([name, counts]) => `${name}: ${counts.great}g/${counts.close}c/${counts.miss}m`)
+      .join(', ');
+
+    if (!getApiKey()) {
+      el.textContent = `[No API key] Session stats: ${pct}% on beat. ${great} great, ${close} close, ${miss} miss out of ${total} beats.\nAdd an API key in ⚙ Settings for an AI coaching report.`;
+      return;
+    }
+
+    el.textContent = 'Generating coaching report…';
+
+    const prompt = `You are an encouraging dance coach. A student just completed a practice session. Give a short, specific, actionable coaching report with 3-5 tips. Reference the actual data below. Be positive but concrete.
+
+Session data:
+- BPM: ${sessionData.bpm}
+- Total beats: ${total}
+- On beat (great): ${great} (${pct}%)
+- Close: ${close}
+- Miss: ${miss}
+- Per-move breakdown (move name: great/close/miss): ${breakdown}
+
+Write a friendly 200-word coaching report with numbered tips. Reference specific moves that need work and what to do about them.`;
+
+    try {
+      const report = await callClaude([{ role: 'user', content: prompt }], 600);
+      el.textContent = report;
+    } catch (e) {
+      el.textContent = `Could not generate AI report: ${e.message}\n\nStats: ${pct}% on beat. ${great} great, ${close} close, ${miss} miss.`;
+    }
+  }
+
+  function renderChart(sessionData, canvasEl) {
+    const ctx = canvasEl.getContext('2d');
+    const results = sessionData.beatResults;
+    if (results.length === 0) return;
+
+    const W = canvasEl.offsetWidth || 600;
+    const H = 160;
+    canvasEl.width = W;
+    canvasEl.height = H;
+
+    ctx.fillStyle = '#1A1A22';
+    ctx.fillRect(0, 0, W, H);
+
+    const bw = Math.max(4, W / results.length);
+    results.forEach((r, i) => {
+      const x = i * bw;
+      const color = r.matched === 'great' ? '#22C55E' : r.matched === 'close' ? '#F59E0B' : '#EF4444';
+      const barH = r.matched === 'great' ? H * 0.8 : r.matched === 'close' ? H * 0.5 : H * 0.2;
+      ctx.fillStyle = color;
+      ctx.fillRect(x, H - barH, bw - 1, barH);
+    });
+  }
+
+  return { generate, renderChart };
+})();
+
+/* ============================================================
+   UI WIRING — event handlers & screen transitions
+   ============================================================ */
+
+// --- SETTINGS MODAL ---
+document.getElementById('gear-btn').addEventListener('click', () => {
+  document.getElementById('api-key-input').value = getApiKey();
+  document.getElementById('settings-overlay').classList.add('open');
+});
+document.getElementById('close-settings-btn').addEventListener('click', () => {
+  document.getElementById('settings-overlay').classList.remove('open');
+});
+document.getElementById('settings-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('settings-overlay'))
+    document.getElementById('settings-overlay').classList.remove('open');
+});
+document.getElementById('save-key-btn').addEventListener('click', () => {
+  const key = document.getElementById('api-key-input').value.trim();
+  localStorage.setItem('bm_api_key', key);
+  document.getElementById('key-save-status').textContent = key ? 'Key saved.' : 'Key cleared.';
+  setTimeout(() => document.getElementById('key-save-status').textContent = '', 2000);
+});
+
+// --- TABS (setup screen) ---
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    document.getElementById('tab-upload').style.display = tab === 'upload' ? '' : 'none';
+    document.getElementById('tab-link').style.display  = tab === 'link'   ? '' : 'none';
+  });
+});
+
+// --- VIDEO FILE INPUT ---
+const refVideo = document.getElementById('ref-video');
+document.getElementById('video-file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  refVideo.src = URL.createObjectURL(file);
+  refVideo.style.display = 'block';
+  document.getElementById('analyse-btn').disabled = false;
+});
+
+// --- VIDEO URL INPUT ---
+document.getElementById('load-url-btn').addEventListener('click', () => {
+  const url = document.getElementById('video-url-input').value.trim();
+  const hint = document.getElementById('url-hint');
+  if (!url) return;
+
+  const socialPatterns = /youtube\.com|youtu\.be|tiktok\.com|instagram\.com|twitter\.com|x\.com/i;
+  if (socialPatterns.test(url)) {
+    hint.style.color = 'var(--amber)';
+    hint.textContent = "Browsers can't read video directly from YouTube or social media. Please download the clip and use the Upload tab instead.";
+    // Stub: fetchViaBackendProxy(url) — plug in server-side downloader here for a future version
+    return;
+  }
+
+  hint.style.color = '';
+  hint.textContent = 'Loading…';
+  refVideo.src = url;
+  refVideo.style.display = 'block';
+  refVideo.addEventListener('loadeddata', () => {
+    hint.textContent = 'Loaded.';
+    document.getElementById('analyse-btn').disabled = false;
+  }, { once: true });
+  refVideo.addEventListener('error', () => {
+    hint.style.color = 'var(--red)';
+    hint.textContent = 'Could not load video. Check the URL and CORS headers.';
+  }, { once: true });
+});
+
+// --- ANALYSE BUTTON ---
+document.getElementById('analyse-btn').addEventListener('click', async () => {
+  if (STATE.isAnalysing) return;
+  STATE.isAnalysing = true;
+
+  const btn = document.getElementById('analyse-btn');
+  btn.disabled = true;
+  document.getElementById('analysis-progress-wrap').style.display = 'block';
+
+  const setProgress = (pct, msg) => {
+    document.getElementById('analysis-progress').style.width = (pct * 100) + '%';
+    document.getElementById('analysis-status').textContent = msg;
+  };
+
+  try {
+    setProgress(0.02, 'Starting analysis…');
+    const result = await VideoAnalyser.analyse(refVideo, setProgress);
+
+    STATE.beats = result.beats;
+    STATE.poseFrames = result.poseFrames;
+    STATE.bpm = result.bpm;
+    STATE.refAudioBuf = result.audioBuffer;
+
+    if (result.beats.length === 0) {
+      document.getElementById('manual-bpm-wrap').style.display = 'block';
+      setProgress(1, 'No beats detected. Set BPM manually above, then continue.');
+      STATE.isAnalysing = false;
+      btn.disabled = false;
+      return;
+    }
+
+    setProgress(0.92, 'Building choreography map…');
+    STATE.choreoMap = ChoreoMapper.build(result.beats, result.poseFrames);
+
+    setProgress(0.95, 'Naming moves with AI…');
+    STATE.choreoMap = await AIMoveNamer.nameAll(STATE.choreoMap);
+
+    setProgress(1, 'Done!');
+    STATE.isAnalysing = false;
+
+    renderChoreoReview();
+    showScreen('review-screen');
+  } catch (err) {
+    setProgress(0, `Error: ${err.message}`);
+    document.getElementById('analysis-status').style.color = 'var(--red)';
+    STATE.isAnalysing = false;
+    btn.disabled = false;
+    console.error(err);
+  }
+});
+
+// --- TAP TEMPO ---
+let tapTimes = [];
+document.getElementById('tap-btn').addEventListener('click', () => {
+  tapTimes.push(Date.now());
+  if (tapTimes.length > 8) tapTimes.shift();
+  if (tapTimes.length >= 2) {
+    const intervals = tapTimes.slice(1).map((t, i) => t - tapTimes[i]);
+    const avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    const bpm = Math.round(60000 / avg);
+    document.getElementById('tap-bpm-display').textContent = `${bpm} BPM`;
+    document.getElementById('manual-bpm-input').value = bpm;
+    STATE.bpm = bpm;
+    // Generate synthetic beats
+    STATE.beats = [];
+    for (let i = 0; i < 200; i++) {
+      STATE.beats.push({ index: i, timeMs: i * avg, isDownbeat: i % CONFIG.countLength === 0 });
+    }
+    STATE.choreoMap = [];
+    renderChoreoReview();
+    showScreen('review-screen');
+  }
+});
+document.getElementById('manual-bpm-input').addEventListener('change', e => {
+  const bpm = parseInt(e.target.value);
+  if (bpm >= 40 && bpm <= 240) {
+    STATE.bpm = bpm;
+    const ms = 60000 / bpm;
+    STATE.beats = [];
+    for (let i = 0; i < 200; i++) {
+      STATE.beats.push({ index: i, timeMs: i * ms, isDownbeat: i % CONFIG.countLength === 0 });
+    }
+  }
+});
+
+// --- CHOREO REVIEW ---
+function renderChoreoReview() {
+  const meta = document.getElementById('review-meta');
+  meta.textContent = `${STATE.beats.length} beats · ${STATE.bpm} BPM · ${STATE.choreoMap.length} moves detected`;
+
+  const ul = document.getElementById('choreo-list');
+  ul.innerHTML = '';
+  STATE.choreoMap.forEach((move, i) => {
+    const li = document.createElement('li');
+    const numEl = document.createElement('div');
+    numEl.className = 'beat-num' + (STATE.beats[move.beatIndex]?.isDownbeat ? ' down' : '');
+    numEl.textContent = move.beatIndex + 1;
+
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = move.name;
+    inp.addEventListener('change', e => {
+      STATE.choreoMap[i].name = e.target.value;
+      STATE.choreoMap[i].userRenamed = true;
+    });
+
+    const timeTag = document.createElement('span');
+    timeTag.className = 'time-tag';
+    timeTag.textContent = fmtTime(move.timeMs);
+
+    li.appendChild(numEl);
+    li.appendChild(inp);
+    li.appendChild(timeTag);
+    ul.appendChild(li);
+  });
+
+  AudioTrackBuilder.populateVoicePicker();
+}
+
+// Preview voice track
+document.getElementById('preview-voice-btn').addEventListener('click', () => {
+  document.getElementById('preview-voice-btn').style.display = 'none';
+  document.getElementById('stop-voice-btn').style.display = '';
+  AudioTrackBuilder.playCoachingTrack(0);
+});
+document.getElementById('stop-voice-btn').addEventListener('click', () => {
+  document.getElementById('stop-voice-btn').style.display = 'none';
+  document.getElementById('preview-voice-btn').style.display = '';
+  AudioTrackBuilder.stopCoachingTrack();
+});
+
+// --- GO TO PRACTICE ---
+document.getElementById('go-practice-btn').addEventListener('click', async () => {
+  AudioTrackBuilder.stopCoachingTrack();
+  showScreen('practice-screen');
+  await initCamera();
+  LiveHUD.buildBeatGrid();
+  document.getElementById('bpm-display').innerHTML = `${STATE.bpm} <span>BPM</span>`;
+});
+
+async function initCamera() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cameras = devices.filter(d => d.kind === 'videoinput');
+    const picker = document.getElementById('camera-picker');
+    picker.innerHTML = '';
+    cameras.forEach(cam => {
+      const opt = document.createElement('option');
+      opt.value = cam.deviceId;
+      opt.textContent = cam.label || `Camera ${picker.children.length + 1}`;
+      picker.appendChild(opt);
+    });
+    picker.addEventListener('change', () => switchCamera(picker.value));
+
+    await switchCamera(cameras[0]?.deviceId || '');
+  } catch (e) {
+    alert('Camera permission denied or no camera found.');
+  }
+}
+
+async function switchCamera(deviceId) {
+  if (STATE.camStream) STATE.camStream.getTracks().forEach(t => t.stop());
+  const constraints = { video: deviceId ? { deviceId: { exact: deviceId } } : true };
+  try {
+    STATE.camStream = await navigator.mediaDevices.getUserMedia(constraints);
+    const vidEl = document.getElementById('cam-video');
+    vidEl.srcObject = STATE.camStream;
+    await vidEl.play();
+  } catch (e) {
+    alert('Could not start camera: ' + e.message);
+  }
+}
+
+// --- START / STOP PRACTICE ---
+document.getElementById('start-practice-btn').addEventListener('click', async () => {
+  document.getElementById('start-practice-btn').style.display = 'none';
+  document.getElementById('stop-practice-btn').style.display = '';
+
+  const mode = document.querySelector('input[name="music-mode"]:checked').value;
+  STATE.musicMode = mode;
+
+  // Start live pose tracking
+  const vidEl = document.getElementById('cam-video');
+  const canvasEl = document.getElementById('pose-canvas');
+  LivePoseTracker.start(vidEl, canvasEl, frame => {
+    LiveHUD.onMotionFrame(frame);
+  });
+
+  if (mode === 'app') {
+    LiveHUD.startAppMode();
+  } else {
+    LiveHUD.startMicMode();
+  }
+});
+
+document.getElementById('stop-practice-btn').addEventListener('click', () => {
+  document.getElementById('stop-practice-btn').style.display = 'none';
+  document.getElementById('start-practice-btn').style.display = '';
+
+  const session = LiveHUD.stop();
+  STATE.sessionData = session;
+  if (STATE.camStream) STATE.camStream.getTracks().forEach(t => t.stop());
+
+  showResults(session);
+});
+
+// --- RESULTS ---
+async function showResults(session) {
+  showScreen('results-screen');
+
+  const total = session.beatResults.length;
+  const great = session.beatResults.filter(r => r.matched === 'great').length;
+  const miss  = session.beatResults.filter(r => r.matched === 'miss').length;
+  const pct   = total > 0 ? Math.round((great / total) * 100) : 0;
+
+  document.getElementById('stat-score').textContent = pct + '%';
+  document.getElementById('stat-great').textContent = great;
+  document.getElementById('stat-miss').textContent  = miss;
+
+  const chart = document.getElementById('results-chart');
+  AICoachReport.renderChart(session, chart);
+  await AICoachReport.generate(session);
+
+  // Save to history
+  saveSessionHistory({ bpm: session.bpm, score: pct, beats: total, date: new Date().toISOString() });
+  renderHistory();
+}
+
+function renderHistory() {
+  const hist = loadSessionHistory();
+  const ul = document.getElementById('session-history');
+  ul.innerHTML = '';
+  hist.forEach(s => {
+    const li = document.createElement('li');
+    const d = new Date(s.date);
+    li.innerHTML = `<span>${d.toLocaleDateString()} ${d.toLocaleTimeString()}</span><span>${s.score}% on beat — ${s.bpm} BPM</span>`;
+    ul.appendChild(li);
+  });
+}
+
+document.getElementById('practice-again-btn').addEventListener('click', () => {
+  showScreen('practice-screen');
+  initCamera().then(() => {
+    LiveHUD.buildBeatGrid();
+    document.getElementById('start-practice-btn').style.display = '';
+    document.getElementById('stop-practice-btn').style.display = 'none';
+  });
+});
+document.getElementById('back-setup-btn').addEventListener('click', () => {
+  showScreen('setup-screen');
+  document.getElementById('analysis-progress-wrap').style.display = 'none';
+  document.getElementById('analyse-btn').disabled = true;
+  refVideo.src = '';
+  refVideo.style.display = 'none';
+  STATE.beats = [];
+  STATE.poseFrames = [];
+  STATE.choreoMap = [];
+});
+
+// --- INIT ---
+(function init() {
+  renderHistory();
+  if (!('speechSynthesis' in window)) {
+    document.getElementById('preview-voice-btn').title = 'Web Speech API not available in this browser';
+  }
+})();
+
+</script>
+</body>
+</html>
