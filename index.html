@@ -1397,7 +1397,6 @@ document.getElementById('video-file-input').addEventListener('change', e => {
 const PROXY_BASE = 'http://localhost:8765';
 
 async function fetchViaBackendProxy(url) {
-  // Calls the local server.py proxy which uses yt-dlp to download the video
   const proxyUrl = `${PROXY_BASE}/download?url=${encodeURIComponent(url)}`;
   const hint = document.getElementById('url-hint');
 
@@ -1405,20 +1404,37 @@ async function fetchViaBackendProxy(url) {
   hint.textContent = 'Downloading via local server… (may take 20–60s for YouTube)';
   document.getElementById('load-url-btn').disabled = true;
 
+  // First check the server is reachable and the download succeeds
+  // by doing a HEAD-style ping, then stream directly into the <video> element.
+  // Streaming directly (rather than fetch→blob) avoids codec/MIME issues.
   try {
-    const res = await fetch(proxyUrl);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      throw new Error(err.error || `Server error ${res.status}`);
+    // Ping: fetch just the first byte to confirm server is up and URL works
+    const ping = await fetch(proxyUrl, { headers: { Range: 'bytes=0-0' } });
+    if (!ping.ok) {
+      const err = await ping.json().catch(() => ({ error: `Server error ${ping.status}` }));
+      throw new Error(err.error || `Server error ${ping.status}`);
     }
-    const blob = await res.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    refVideo.src = objectUrl;
+
+    // Stream directly into the video element — Chrome handles seeking via range requests
+    refVideo.src = proxyUrl;
     refVideo.style.display = 'block';
+
     await new Promise((resolve, reject) => {
-      refVideo.addEventListener('loadeddata', resolve, { once: true });
-      refVideo.addEventListener('error', () => reject(new Error('Video failed to load after download')), { once: true });
+      const onLoad  = () => { cleanup(); resolve(); };
+      const onError = () => {
+        cleanup();
+        const code = refVideo.error?.code;
+        const msgs = { 1: 'Aborted', 2: 'Network error', 3: 'Decode error — codec not supported', 4: 'Format not supported' };
+        reject(new Error(msgs[code] || `Video error (code ${code})`));
+      };
+      const cleanup = () => {
+        refVideo.removeEventListener('loadeddata', onLoad);
+        refVideo.removeEventListener('error', onError);
+      };
+      refVideo.addEventListener('loadeddata', onLoad, { once: true });
+      refVideo.addEventListener('error', onError, { once: true });
     });
+
     hint.style.color = 'var(--green)';
     hint.textContent = 'Downloaded. Ready to analyse.';
     document.getElementById('analyse-btn').disabled = false;

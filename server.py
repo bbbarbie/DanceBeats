@@ -2,8 +2,9 @@
 """
 BeatMatch local server
 - Serves index.html at http://localhost:8765
-- GET /download?url=<youtube-or-video-url>  →  streams mp4 via yt-dlp
+- GET /download?url=<youtube-or-video-url>  →  downloads via yt-dlp, streams with range support
 - Requires: pip install yt-dlp
+- Optional: install ffmpeg for best quality (brew install ffmpeg)
 """
 
 import http.server
@@ -17,6 +18,14 @@ from pathlib import Path
 
 PORT = 8765
 DIR  = Path(__file__).parent
+
+
+def has_ffmpeg():
+    try:
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
 
 
 class BeatMatchHandler(http.server.SimpleHTTPRequestHandler):
@@ -44,16 +53,34 @@ class BeatMatchHandler(http.server.SimpleHTTPRequestHandler):
 
         tmp_path = None
         try:
-            # Write to a predictable temp file so we can stream it back
             with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
                 tmp_path = f.name
 
             print(f"[yt-dlp] downloading: {url}")
+
+            # Prefer a single-file h264+aac mp4 so Chrome can always play it.
+            # Falls back progressively to whatever is available.
+            if has_ffmpeg():
+                fmt = (
+                    "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]"
+                    "/bestvideo[ext=mp4]+bestaudio[ext=m4a]"
+                    "/best[ext=mp4]/best"
+                )
+                extra = ["--merge-output-format", "mp4", "--recode-video", "mp4"]
+            else:
+                # No ffmpeg — pick a pre-muxed mp4 so no merging is needed
+                fmt = (
+                    "best[ext=mp4][vcodec^=avc1]"
+                    "/best[ext=mp4]"
+                    "/best"
+                )
+                extra = []
+
             result = subprocess.run(
                 [
                     "yt-dlp",
-                    "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                    "--merge-output-format", "mp4",
+                    "-f", fmt,
+                    *extra,
                     "-o", tmp_path,
                     "--no-playlist",
                     "--no-warnings",
@@ -65,30 +92,66 @@ class BeatMatchHandler(http.server.SimpleHTTPRequestHandler):
             )
 
             if result.returncode != 0:
-                self._json_error(500, result.stderr.strip() or "yt-dlp failed")
+                msg = result.stderr.strip() or result.stdout.strip() or "yt-dlp failed"
+                print(f"[yt-dlp] error: {msg}")
+                self._json_error(500, msg)
                 return
 
-            size = os.path.getsize(tmp_path)
-            self.send_response(200)
-            self.send_header("Content-Type", "video/mp4")
-            self.send_header("Content-Length", str(size))
-            self.send_header("Content-Disposition", 'inline; filename="video.mp4"')
-            self._cors()
-            self.end_headers()
+            # yt-dlp may rename the file (e.g. when recoding); find the actual output
+            actual_path = tmp_path
+            if not os.path.exists(actual_path) or os.path.getsize(actual_path) == 0:
+                self._json_error(500, "Downloaded file is empty or missing.")
+                return
 
-            with open(tmp_path, "rb") as f:
-                while chunk := f.read(65536):
-                    self.wfile.write(chunk)
+            self._stream_file(actual_path, "video/mp4")
 
         except subprocess.TimeoutExpired:
-            self._json_error(504, "Download timed out (>3 min). Try a shorter video.")
+            self._json_error(504, "Download timed out (>3 min). Try a shorter clip.")
         except BrokenPipeError:
-            pass  # client closed connection
+            pass
         except Exception as e:
             self._json_error(500, str(e))
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
+
+    def _stream_file(self, path, content_type):
+        """Send a file with HTTP range-request support so Chrome can seek."""
+        size = os.path.getsize(path)
+        range_header = self.headers.get("Range", "")
+
+        start, end = 0, size - 1
+        status = 200
+
+        if range_header.startswith("bytes="):
+            try:
+                parts = range_header[6:].split("-")
+                start = int(parts[0]) if parts[0] else 0
+                end   = int(parts[1]) if parts[1] else size - 1
+                end   = min(end, size - 1)
+                status = 206
+            except (ValueError, IndexError):
+                pass
+
+        length = end - start + 1
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(length))
+        self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Disposition", 'inline; filename="video.mp4"')
+        self._cors()
+        self.end_headers()
+
+        with open(path, "rb") as f:
+            f.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = f.read(min(65536, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -118,9 +181,11 @@ def check_ytdlp():
 
 if __name__ == "__main__":
     if not check_ytdlp():
-        print("yt-dlp not found. Install it first:")
-        print("  pip install yt-dlp")
+        print("yt-dlp not found.  Install it:  pip3 install yt-dlp")
         raise SystemExit(1)
+
+    ffmpeg = has_ffmpeg()
+    print(f"ffmpeg: {'found ✓' if ffmpeg else 'not found — install for best quality: brew install ffmpeg'}")
 
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", PORT), BeatMatchHandler) as httpd:
