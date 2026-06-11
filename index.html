@@ -288,12 +288,13 @@ body {
   <!-- LINK TAB -->
   <div id="tab-link" style="display:none">
     <div class="field">
-      <label>Direct video URL (.mp4 / .webm from a CORS-permitting host)</label>
-      <input type="url" id="video-url-input" placeholder="https://example.com/dance.mp4">
-      <div class="hint" id="url-hint"></div>
+      <label>YouTube, TikTok, or direct video URL</label>
+      <input type="url" id="video-url-input" placeholder="https://youtube.com/watch?v=… or https://example.com/dance.mp4">
+      <div class="hint" id="url-hint">
+        YouTube/social links require the local server (<code>python3 server.py</code>). Direct .mp4/.webm links work without it.
+      </div>
     </div>
     <button class="btn btn-secondary btn-sm" id="load-url-btn">Load URL</button>
-    <!-- Stub: fetchViaBackendProxy(url) — plug in a server-side downloader here for YouTube/TikTok/IG -->
   </div>
 
   <!-- VIDEO PREVIEW -->
@@ -1393,6 +1394,46 @@ document.getElementById('video-file-input').addEventListener('change', e => {
 });
 
 // --- VIDEO URL INPUT ---
+const PROXY_BASE = 'http://localhost:8765';
+
+async function fetchViaBackendProxy(url) {
+  // Calls the local server.py proxy which uses yt-dlp to download the video
+  const proxyUrl = `${PROXY_BASE}/download?url=${encodeURIComponent(url)}`;
+  const hint = document.getElementById('url-hint');
+
+  hint.style.color = '';
+  hint.textContent = 'Downloading via local server… (may take 20–60s for YouTube)';
+  document.getElementById('load-url-btn').disabled = true;
+
+  try {
+    const res = await fetch(proxyUrl);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new Error(err.error || `Server error ${res.status}`);
+    }
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    refVideo.src = objectUrl;
+    refVideo.style.display = 'block';
+    await new Promise((resolve, reject) => {
+      refVideo.addEventListener('loadeddata', resolve, { once: true });
+      refVideo.addEventListener('error', () => reject(new Error('Video failed to load after download')), { once: true });
+    });
+    hint.style.color = 'var(--green)';
+    hint.textContent = 'Downloaded. Ready to analyse.';
+    document.getElementById('analyse-btn').disabled = false;
+  } catch (e) {
+    hint.style.color = 'var(--red)';
+    if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
+      hint.textContent = 'Local server not running. Start it with: python3 server.py';
+    } else {
+      hint.textContent = `Error: ${e.message}`;
+    }
+  } finally {
+    document.getElementById('load-url-btn').disabled = false;
+  }
+}
+
 document.getElementById('load-url-btn').addEventListener('click', () => {
   const url = document.getElementById('video-url-input').value.trim();
   const hint = document.getElementById('url-hint');
@@ -1400,23 +1441,23 @@ document.getElementById('load-url-btn').addEventListener('click', () => {
 
   const socialPatterns = /youtube\.com|youtu\.be|tiktok\.com|instagram\.com|twitter\.com|x\.com/i;
   if (socialPatterns.test(url)) {
-    hint.style.color = 'var(--amber)';
-    hint.textContent = "Browsers can't read video directly from YouTube or social media. Please download the clip and use the Upload tab instead.";
-    // Stub: fetchViaBackendProxy(url) — plug in server-side downloader here for a future version
+    fetchViaBackendProxy(url);
     return;
   }
 
+  // Direct video file — load without proxy
   hint.style.color = '';
   hint.textContent = 'Loading…';
   refVideo.src = url;
   refVideo.style.display = 'block';
   refVideo.addEventListener('loadeddata', () => {
+    hint.style.color = 'var(--green)';
     hint.textContent = 'Loaded.';
     document.getElementById('analyse-btn').disabled = false;
   }, { once: true });
   refVideo.addEventListener('error', () => {
     hint.style.color = 'var(--red)';
-    hint.textContent = 'Could not load video. Check the URL and CORS headers.';
+    hint.textContent = 'Could not load video. Check the URL — or try the local server for social media links.';
   }, { once: true });
 });
 
